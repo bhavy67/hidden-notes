@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+:root {
+  --tint: 255, 224, 130;
+  --opacity: 0.88;
+  --font-size: 15px;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* Allow text selection only inside the note content areas */
+textarea, input[type="text"], .selectable {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+/* Scrollbars — minimal */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.35); }
+
+/* Range input accent */
+input[type=range] {
+  -webkit-app-region: no-drag;
+  accent-color: rgba(0,0,0,0.45);
+  cursor: pointer;
+}
+
+/* Drag handle */
+.drag-handle {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Checklist items */
+.checklist-item input[type="checkbox"] {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: pointer;
+  accent-color: rgba(0,0,0,0.5);
+  flex-shrink: 0;
+}
