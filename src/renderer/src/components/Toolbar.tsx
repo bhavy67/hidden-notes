@@ -1,110 +1,68 @@
 import React from 'react'
-import { Note, NoteColor, ContentType } from '../types'
+import { Note, NoteColor } from '../types'
 import ColorPicker from './ColorPicker'
+import Tooltip from './Tooltip'
 
 interface ToolbarProps {
   note: Note
   onUpdate: (patch: Partial<Note>) => void
-  onPopOut: () => void
   onDelete: () => void
   onClose: () => void
+  showSearch: boolean
+  onToggleSearch: () => void
+  showHistory: boolean
+  onToggleHistory: () => void
 }
 
-export default function Toolbar({ note, onUpdate, onPopOut, onDelete, onClose }: ToolbarProps) {
+export default function Toolbar({
+  note, onUpdate, onDelete, onClose,
+  showSearch, onToggleSearch,
+  showHistory, onToggleHistory,
+}: ToolbarProps) {
   const isDark = note.color === 'dark'
-  const base = isDark ? 'text-white/60 hover:text-white/90 hover:bg-white/12' : 'text-black/50 hover:text-black/80 hover:bg-black/8'
-  const btnClass = `no-drag flex items-center justify-center px-1.5 py-1 rounded text-xs font-medium transition-all cursor-pointer select-none ${base}`
-  const activeClass = isDark ? 'bg-white/15 text-white/90' : 'bg-black/10 text-black/80'
+
+  const base = isDark
+    ? 'text-white/55 hover:text-white/90 hover:bg-white/10'
+    : 'text-black/45 hover:text-black/80 hover:bg-black/8'
+  const btn = `no-drag flex items-center justify-center px-1.5 py-1 rounded text-xs font-medium transition-all cursor-pointer select-none ${base}`
+  const on  = isDark ? 'bg-white/15 text-white/90' : 'bg-black/10 text-black/80'
+  const sep = isDark ? 'border-white/8' : 'border-black/6'
 
   return (
-    <div className={`flex items-center gap-0.5 px-2 py-1.5 border-t ${isDark ? 'border-white/8' : 'border-black/6'}`}>
-      {/* Color picker */}
-      <ColorPicker
-        value={note.color}
-        dark={isDark}
-        onChange={(color: NoteColor) => onUpdate({ color })}
-      />
+    <div className={`flex items-center gap-1 px-2 py-1.5 border-t flex-shrink-0 ${sep}`}>
 
-      {/* Opacity */}
-      <div className="no-drag flex items-center gap-1 ml-1">
-        <span className={`text-[10px] ${isDark ? 'text-white/40' : 'text-black/35'}`}>opacity</span>
-        <input
-          type="range"
-          min={30}
-          max={100}
-          value={Math.round(note.opacity * 100)}
-          onChange={(e) => onUpdate({ opacity: Number(e.target.value) / 100 })}
-          className="w-14"
-          title={`Opacity: ${Math.round(note.opacity * 100)}%`}
-        />
-      </div>
+      {/* ── Colour ── */}
+      <ColorPicker value={note.color} dark={isDark} onChange={(c: NoteColor) => onUpdate({ color: c })} />
 
-      {/* Font size */}
-      <button
-        onMouseDown={() => onUpdate({ fontSize: Math.max(10, note.fontSize - 1) })}
-        className={btnClass}
-        title="Smaller text"
-      >A−</button>
-      <button
-        onMouseDown={() => onUpdate({ fontSize: Math.min(32, note.fontSize + 1) })}
-        className={btnClass}
-        title="Larger text"
-      >A+</button>
-
-      {/* Content type toggle */}
-      <div className={`no-drag flex items-center rounded overflow-hidden border ml-0.5 ${isDark ? 'border-white/10' : 'border-black/8'}`}>
-        {(['text', 'checklist', 'markdown'] as ContentType[]).map((ct) => (
-          <button
-            key={ct}
-            onMouseDown={() => onUpdate({ contentType: ct })}
-            className={`px-1.5 py-0.5 text-[10px] font-medium cursor-pointer transition-all select-none ${
-              note.contentType === ct
-                ? (isDark ? 'bg-white/20 text-white' : 'bg-black/10 text-black/80')
-                : (isDark ? 'text-white/40 hover:bg-white/8' : 'text-black/35 hover:bg-black/5')
-            }`}
-            title={`Switch to ${ct} mode`}
-          >
-            {ct === 'text' ? 'T' : ct === 'checklist' ? '☑' : 'M'}
-          </button>
-        ))}
-      </div>
+      {/* ── Font size ── */}
+      <Tooltip label="Smaller text">
+        <button onMouseDown={() => onUpdate({ fontSize: Math.max(10, note.fontSize - 1) })} className={btn}>A−</button>
+      </Tooltip>
+      <Tooltip label="Larger text">
+        <button onMouseDown={() => onUpdate({ fontSize: Math.min(32, note.fontSize + 1) })} className={btn}>A+</button>
+      </Tooltip>
 
       <div className="flex-1" />
 
-      {/* Pin */}
-      <button
-        onMouseDown={() => onUpdate({ pinned: !note.pinned })}
-        className={`${btnClass} ${note.pinned ? activeClass : ''}`}
-        title={note.pinned ? 'Pinned (always on top)' : 'Not pinned'}
-      >📌</button>
+      {/* ── Search ── */}
+      <Tooltip label="Search notes" shortcut="⌘F">
+        <button onMouseDown={onToggleSearch} className={`${btn} ${showSearch ? on : ''}`}>🔍</button>
+      </Tooltip>
 
-      {/* Ghost */}
-      <button
-        onMouseDown={() => onUpdate({ ghost: !note.ghost })}
-        className={`${btnClass} ${note.ghost ? activeClass : ''}`}
-        title={note.ghost ? 'Click-through ON' : 'Click-through OFF (⌘⇧G)'}
-      >👻</button>
+      {/* ── History ── */}
+      <Tooltip label="Note history">
+        <button onMouseDown={onToggleHistory} className={`${btn} ${showHistory ? on : ''}`}>🕐</button>
+      </Tooltip>
 
-      {/* Pop out */}
-      <button
-        onMouseDown={onPopOut}
-        className={btnClass}
-        title="Pop out as floating window"
-      >⬡</button>
+      {/* ── Delete ── */}
+      <Tooltip label="Delete this note">
+        <button onMouseDown={onDelete} className={`${btn} hover:!text-red-400`}>🗑</button>
+      </Tooltip>
 
-      {/* Delete */}
-      <button
-        onMouseDown={onDelete}
-        className={`${btnClass} hover:text-red-500`}
-        title="Delete this note"
-      >🗑</button>
-
-      {/* Close panel */}
-      <button
-        onMouseDown={onClose}
-        className={btnClass}
-        title="Hide GhostPad (⌘⇧H)"
-      >✕</button>
+      {/* ── Close ── */}
+      <Tooltip label="Hide GhostPad" shortcut="⌘⇧H">
+        <button onMouseDown={onClose} className={btn}>✕</button>
+      </Tooltip>
     </div>
   )
 }

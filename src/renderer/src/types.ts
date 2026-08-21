@@ -1,5 +1,5 @@
 // Re-export shared types for renderer
-export type { Note, NoteColor, ContentType, ChecklistItem, NotePatch } from '../../main/types'
+export type { Note, NoteColor, ContentType, NotePatch } from '../../main/types'
 
 export const NOTE_COLORS: Record<string, { label: string; tint: string; dark: boolean }> = {
   yellow: { label: 'Yellow',  tint: '255, 224, 130', dark: false },

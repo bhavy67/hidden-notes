@@ -4,7 +4,11 @@ export const isMac = process.platform === 'darwin'
 export const isWindows = process.platform === 'win32'
 
 export function hideDockIcon(): void {
-  if (isMac && app.dock) app.dock.hide()
+  if (isMac) {
+    // accessory policy removes the app from dock, Cmd+Tab switcher, and Spotlight
+    app.setActivationPolicy('accessory')
+    if (app.dock) app.dock.hide()
+  }
 }
 
 export function setPinned(win: BrowserWindow, pinned: boolean): void {

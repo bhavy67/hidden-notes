@@ -3,14 +3,16 @@ import path from 'path'
 import { NoteStore } from './store'
 import { Note, NotePatch, IPC } from './types'
 import { setPinned, applyContentProtection, hideDockIcon, captureExclusionCaveat } from './platform'
-import { clampToVisibleDisplay, displayIdForPoint } from './displayUtils'
 import { registerShortcuts, unregisterAll } from './shortcuts'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
-const popoutWindows = new Map<string, BrowserWindow>()
+
+// ── Panic hide state ────────────────────────────────────────
+let panicActive = false
+let panicMainWasVisible = false
 
 const store = new NoteStore(app.getPath('userData'))
 
@@ -59,111 +61,41 @@ function createMainWindow(): BrowserWindow {
     win.showInactive()
   })
 
-  win.on('moved', () => {
-    const [x, y] = win.getPosition()
-    const [w, h] = win.getSize()
-    // persist panel position in settings (future: store.savePanelBounds)
-    void [x, y, w, h]
-  })
-
-  win.on('resized', () => {
-    const [x, y] = win.getPosition()
-    const [w, h] = win.getSize()
-    void [x, y, w, h]
-  })
-
-  win.on('closed', () => {
-    mainWindow = null
-  })
+  win.on('closed', () => { mainWindow = null })
 
   return win
 }
 
 // ────────────────────────────────────────────────────────────
-// Pop-out: detach a note into its own floating window
+// Panic hide — instant hide/restore of the GhostPad window
 // ────────────────────────────────────────────────────────────
 
-function openPopout(noteId: string): void {
-  if (popoutWindows.has(noteId)) {
-    const existing = popoutWindows.get(noteId)!
-    if (!existing.isDestroyed()) {
-      existing.show()
-      return
-    }
-  }
-
-  const note = store.get(noteId)
-  if (!note) return
-
-  const bounds = clampToVisibleDisplay(note)
-  const win = new BrowserWindow({
-    width: bounds.width,
-    height: bounds.height,
-    x: bounds.x + 30,
-    y: bounds.y + 30,
-    frame: false,
-    transparent: true,
-    resizable: true,
-    hasShadow: false,
-    skipTaskbar: true,
-    minWidth: 220,
-    minHeight: 160,
-    backgroundColor: '#00000000',
-    show: false,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
-    }
-  })
-
-  setPinned(win, note.pinned)
-
-  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}?noteId=${noteId}&mode=popout`)
+function panicToggle(): void {
+  if (!panicActive) {
+    panicActive = true
+    panicMainWasVisible = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
+    if (panicMainWasVisible) mainWindow!.hide()
   } else {
-    win.loadFile(path.join(__dirname, '../renderer/index.html'), {
-      query: { noteId, mode: 'popout' }
-    })
+    panicActive = false
+    if (panicMainWasVisible) {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        mainWindow = createMainWindow()
+      } else {
+        applyContentProtection(mainWindow)
+        mainWindow.showInactive()
+      }
+    }
   }
-
-  win.once('ready-to-show', () => {
-    applyContentProtection(win)
-    win.showInactive()
-  })
-
-  win.on('moved', () => {
-    const [x, y] = win.getPosition()
-    store.update(noteId, { x, y, displayId: displayIdForPoint(x, y) })
-  })
-
-  win.on('resized', () => {
-    const [x, y] = win.getPosition()
-    const [w, h] = win.getSize()
-    store.update(noteId, { x, y, width: w, height: h })
-  })
-
-  win.on('closed', () => {
-    popoutWindows.delete(noteId)
-    store.update(noteId, { poppedOut: false })
-    broadcast(IPC.NOTES_CHANGED, store.all())
-  })
-
-  popoutWindows.set(noteId, win)
-  store.update(noteId, { poppedOut: true })
+  updateTrayMenu()
 }
 
 // ────────────────────────────────────────────────────────────
-// Broadcast notes state to all windows
+// Broadcast notes state to the main window
 // ────────────────────────────────────────────────────────────
 
 function broadcast(channel: string, payload: unknown): void {
-  const targets = [mainWindow, ...popoutWindows.values()].filter(
-    (w): w is BrowserWindow => !!w && !w.isDestroyed()
-  )
-  for (const w of targets) {
-    w.webContents.send(channel, payload)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload)
   }
 }
 
@@ -174,28 +106,26 @@ function broadcast(channel: string, payload: unknown): void {
 ipcMain.handle(IPC.NOTES_GET_ALL, () => store.all())
 
 ipcMain.handle(IPC.NOTES_CREATE, (_e, overrides: Partial<Note>) => {
-  const note = store.create(overrides)
+  const title = overrides.title !== undefined ? overrides.title : `Tab ${store.nextTabNumber()}`
+  const note = store.create({ ...overrides, title })
   broadcast(IPC.NOTES_CHANGED, store.all())
   updateTrayMenu()
   return note
 })
 
+const snapshotTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
 ipcMain.handle(IPC.NOTES_UPDATE, (_e, id: string, patch: NotePatch) => {
   const note = store.update(id, patch)
   if (!note) return null
 
-  // Sync pinned state to popout window if it exists
-  if (typeof patch.pinned === 'boolean') {
-    const win = popoutWindows.get(id)
-    if (win && !win.isDestroyed()) setPinned(win, patch.pinned)
-  }
-
-  // Ghost → force always-on-top on popout
-  if (typeof patch.ghost === 'boolean') {
-    const win = popoutWindows.get(id)
-    if (win && !win.isDestroyed()) {
-      setPinned(win, patch.ghost ? true : note.pinned)
-    }
+  if (patch.content !== undefined) {
+    const existing = snapshotTimers.get(id)
+    if (existing) clearTimeout(existing)
+    snapshotTimers.set(id, setTimeout(() => {
+      store.saveSnapshot(id)
+      snapshotTimers.delete(id)
+    }, 8000))
   }
 
   broadcast(IPC.NOTES_CHANGED, store.all())
@@ -204,16 +134,7 @@ ipcMain.handle(IPC.NOTES_UPDATE, (_e, id: string, patch: NotePatch) => {
 })
 
 ipcMain.handle(IPC.NOTES_DELETE, (_e, id: string) => {
-  const win = popoutWindows.get(id)
-  if (win && !win.isDestroyed()) win.destroy()
-  popoutWindows.delete(id)
   store.remove(id)
-  broadcast(IPC.NOTES_CHANGED, store.all())
-  updateTrayMenu()
-})
-
-ipcMain.on(IPC.NOTES_POP_OUT, (_e, noteId: string) => {
-  openPopout(noteId)
   broadcast(IPC.NOTES_CHANGED, store.all())
   updateTrayMenu()
 })
@@ -223,8 +144,20 @@ ipcMain.on(IPC.WINDOW_CLOSE, () => {
   updateTrayMenu()
 })
 
-ipcMain.on(IPC.WINDOW_MINIMIZE, () => {
-  mainWindow?.minimize()
+ipcMain.on(IPC.PANIC_TOGGLE, () => panicToggle())
+
+ipcMain.on(IPC.WINDOW_MINIMIZE, () => mainWindow?.minimize())
+
+ipcMain.handle(IPC.HISTORY_GET, (_e, noteId: string) => store.getHistory(noteId))
+
+ipcMain.handle(IPC.HISTORY_RESTORE, (_e, noteId: string, snapshotId: number) => {
+  const history = store.getHistory(noteId)
+  const snapshot = history.find((h) => h.id === snapshotId)
+  if (!snapshot) return null
+  store.saveSnapshot(noteId)
+  const updated = store.update(noteId, { content: snapshot.content })
+  broadcast(IPC.NOTES_CHANGED, store.all())
+  return updated
 })
 
 // ────────────────────────────────────────────────────────────
@@ -251,28 +184,28 @@ function updateTrayMenu(): void {
       : notes.map((n) => ({
           label: `${n.visible ? '●' : '○'} ${noteLabel(n)}`,
           click: () => {
-            if (!mainWindow || mainWindow.isDestroyed()) {
-              mainWindow = createMainWindow()
-            } else {
-              mainWindow.show()
-            }
+            if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow()
+            else mainWindow.show()
           }
         }))
 
+  const panicLabel: Electron.MenuItemConstructorOptions = panicActive
+    ? { label: '⚡ Hidden (panic mode) — press ⌘⇧. to restore', enabled: false }
+    : { label: '⚡ Panic hide — hide everything (⌘⇧.)', click: () => panicToggle() }
+
   const menu = Menu.buildFromTemplate([
+    panicLabel,
+    { type: 'separator' },
     {
-      label: 'Show GhostPad',
+      label: panicActive ? 'GhostPad is hidden' : 'Show GhostPad',
+      enabled: !panicActive,
       click: () => {
-        if (!mainWindow || mainWindow.isDestroyed()) {
-          mainWindow = createMainWindow()
-        } else {
-          mainWindow.show()
-          mainWindow.focus()
-        }
+        if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow()
+        else { mainWindow.show(); mainWindow.focus() }
       }
     },
-    { label: 'New Note', accelerator: 'CmdOrCtrl+Shift+N', click: () => {
-      const note = store.create()
+    { label: 'New Tab', accelerator: 'CmdOrCtrl+Shift+N', enabled: !panicActive, click: () => {
+      const note = store.create({ title: `Tab ${store.nextTabNumber()}` })
       broadcast(IPC.NOTES_CHANGED, store.all())
       updateTrayMenu()
       if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow()
@@ -291,7 +224,7 @@ function updateTrayMenu(): void {
           type: 'info',
           title: 'About GhostPad',
           message: 'GhostPad',
-          detail: `Version ${app.getVersion()}\nInvisible sticky notes for client calls.\nInvisible to screen sharing & recording.`
+          detail: `Version ${app.getVersion()}\nInvisible sticky notes for client calls.\nInvisible to screen sharing & recording.\n\n⚡ Panic hide: ⌘⇧. — instantly hide/restore all notes`
         })
       }
     },
@@ -300,6 +233,7 @@ function updateTrayMenu(): void {
   ])
 
   tray.setContextMenu(menu)
+  tray.setToolTip(panicActive ? 'GhostPad — hidden (⌘⇧. to restore)' : 'GhostPad')
 }
 
 function setupTray(): void {
@@ -327,12 +261,8 @@ if (!gotLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
-      mainWindow.show()
-      mainWindow.focus()
-    } else {
-      mainWindow = createMainWindow()
-    }
+    if (mainWindow) { mainWindow.show(); mainWindow.focus() }
+    else mainWindow = createMainWindow()
   })
 
   app.whenReady().then(() => {
@@ -340,22 +270,22 @@ if (!gotLock) {
     setupTray()
     mainWindow = createMainWindow()
 
-    // Seed with a welcome note if DB is fresh
     if (store.all().length === 0) {
       store.create({
-        title: 'Welcome to GhostPad',
-        content: 'This note is invisible to screen sharing.\nPress Cmd+Shift+N for a new note.',
+        title: 'Tab 1',
+        content: 'This note is invisible to screen sharing.\nDouble-click the tab name to rename it.',
         color: 'yellow'
       })
     }
 
     registerShortcuts({
       newNote: () => {
-        store.create()
+        const note = store.create({ title: `Tab ${store.nextTabNumber()}` })
         broadcast(IPC.NOTES_CHANGED, store.all())
         updateTrayMenu()
         if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow()
         else { mainWindow.show(); mainWindow.focus() }
+        void note
       },
       toggleHideAll: () => {
         if (mainWindow) {
@@ -363,35 +293,19 @@ if (!gotLock) {
           else { mainWindow.show(); mainWindow.focus() }
         }
       },
-      toggleGhostAll: () => broadcast(IPC.NOTE_TOGGLE_GHOST, null),
       openManager: () => {
         if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow()
         else { mainWindow.show(); mainWindow.focus() }
-      }
+      },
+      panicToggle: () => panicToggle()
     })
-
-    screen.on('display-added', () => {/* future: reposition popped-out notes */})
-    screen.on('display-removed', () => {})
-    screen.on('display-metrics-changed', () => {})
   })
 
-  app.on('before-quit', () => {
-    store.close()
-  })
-
-  app.on('will-quit', () => {
-    unregisterAll()
-  })
-
-  app.on('window-all-closed', () => {
-    // Stay alive as tray app — don't quit when all windows close
-  })
-
+  app.on('before-quit', () => { store.close() })
+  app.on('will-quit', () => { unregisterAll() })
+  app.on('window-all-closed', () => { /* stay alive as tray app */ })
   app.on('activate', () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      mainWindow = createMainWindow()
-    } else {
-      mainWindow.show()
-    }
+    if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow()
+    else mainWindow.show()
   })
 }
