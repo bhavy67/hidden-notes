@@ -15,20 +15,59 @@ GhostPad uses the OS-level screen capture exclusion API (`setContentProtection`)
 
 ---
 
-## Features (Phase 1)
+## Features
 
 - Chrome-style tab strip — multiple notes, one panel
-- 3 note types: plain text, checklist, markdown
 - 10 color themes with dark mode
-- Adjustable opacity and font size
-- Pin (always-on-top) and Ghost (click-through) modes
-- Pop out any note as a floating window
+- Adjustable font size
+- Full-text search across all notes (`Cmd/Ctrl+F`)
+- Note history with restore
 - Persistent storage via SQLite
-- Lives in the system tray — no Dock icon
+- Lives in the system tray — no Dock icon, no Cmd+Tab clutter
 
 ---
 
-## Getting Started
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd/Ctrl+Shift+N` | New note tab |
+| `Cmd/Ctrl+Shift+H` | Hide / show GhostPad |
+| Double-click tab | Rename tab |
+
+---
+
+## Sharing with Friends
+
+Build a distributable file and send it — no install of Node or anything else required on their end.
+
+### Build
+
+```bash
+npm run dist:mac   # produces dist/GhostPad-x.x.x.dmg  (macOS)
+npm run dist:win   # produces dist/GhostPad Setup x.x.x.exe  (Windows)
+```
+
+The output lands in the `dist/` folder. Send that file to your friend.
+
+### macOS — what your friend does
+
+1. Open the `.dmg` file
+2. Drag **GhostPad** into their Applications folder
+3. On first launch macOS will block it with *"cannot be verified"* — this is normal for unsigned apps
+4. To open it anyway: **right-click → Open** → click **Open** in the dialog
+
+Or they can go to **System Settings → Privacy & Security → scroll down → Open Anyway** after the first blocked attempt.
+
+### Windows — what your friend does
+
+1. Run the `.exe` installer
+2. Windows SmartScreen may warn *"unrecognized app"* — click **More info → Run anyway**
+3. GhostPad installs and launches automatically
+
+---
+
+## Running from source (developers only)
 
 ### Requirements
 
@@ -50,36 +89,7 @@ npx electron-rebuild -f -w better-sqlite3
 npm run dev
 ```
 
-> A GhostPad icon will appear in your menu bar. The note panel opens automatically.
-
-### Build for distribution
-
-```bash
-npm run dist:mac   # macOS .dmg
-npm run dist:win   # Windows installer
-```
-
----
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Cmd/Ctrl+Shift+N` | New note tab |
-| `Cmd/Ctrl+Shift+H` | Hide / show GhostPad |
-| `Cmd/Ctrl+Shift+G` | Toggle ghost (click-through) mode |
-| Double-click tab | Rename tab |
-
----
-
-## Roadmap
-
-- [ ] Markdown preview
-- [ ] Tags and full-text search
-- [ ] Export notes (copy as text / markdown)
-- [ ] Note history / undo
-- [ ] Meeting mode (structured agenda + action items)
-- [ ] Optional cloud sync for teams
+A GhostPad icon will appear in your menu bar. The note panel opens automatically.
 
 ---
 
