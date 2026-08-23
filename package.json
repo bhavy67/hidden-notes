@@ -45,15 +45,6 @@
       "build/tray-icon.png",
       "build/tray-icon@2x.png"
     ],
-    "extraResources": [
-      {
-        "from": "node_modules/better-sqlite3/build/Release/",
-        "to": "app.asar.unpacked/node_modules/better-sqlite3/build/Release/",
-        "filter": [
-          "*.node"
-        ]
-      }
-    ],
     "asar": {
       "smartUnpack": true
     },
