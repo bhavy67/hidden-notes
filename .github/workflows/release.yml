@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -44,3 +47,4 @@ jobs:
             dist/*.dmg
             dist/*.zip
             dist/*.exe
+          fail_on_unmatched_files: false
