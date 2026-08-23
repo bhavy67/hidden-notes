@@ -34,9 +34,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Rebuild native modules
-        run: npx electron-rebuild -f -w better-sqlite3
-
       - name: Build and package
         run: npm run ${{ matrix.script }}
 
