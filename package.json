@@ -37,6 +37,7 @@
   "build": {
     "appId": "com.ghostpad.app",
     "productName": "GhostPad",
+    "artifactName": "${productName}.${ext}",
     "directories": {
       "buildResources": "build"
     },
