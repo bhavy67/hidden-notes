@@ -25,9 +25,8 @@ export default function Hero() {
           {/* headline */}
           <div className="flex-1">
             <h1 className="text-5xl sm:text-6xl lg:text-[72px] font-black leading-[1.02] tracking-tight mb-8">
-              The notepad<br />
-              screen share<br />
-              <span className="text-[#f0e040]">can't see.</span>
+              Your notes,<br />
+              <span className="text-[#f0e040]">off the record.</span>
             </h1>
 
             <p className="text-[17px] text-white/45 leading-relaxed max-w-md mb-10">

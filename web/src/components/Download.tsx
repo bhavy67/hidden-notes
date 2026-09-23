@@ -14,8 +14,8 @@ export default function Download() {
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/25 mb-8">Download</p>
 
           <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.05] mb-12">
-            Your notes.<br />
-            No one else's business.<br />
+            Your notes,<br />
+            off the record.<br />
             <span className="text-[#f0e040]">Start for free.</span>
           </h2>
 
