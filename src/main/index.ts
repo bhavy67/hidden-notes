@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, dialog, desktopCapturer, systemPreferences, shell, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, dialog, desktopCapturer, systemPreferences, shell, nativeTheme, Notification } from 'electron'
 import path from 'path'
+import https from 'https'
 import { NoteStore } from './store'
 import { Note, NotePatch, IPC } from './types'
 import { setPinned, applyContentProtection, hideDockIcon, captureExclusionCaveat, isMac, isWindows, isWindowsBuildSupported } from './platform'
@@ -19,6 +20,56 @@ let panicFlushRemaining = 0
 let panicHideTimer: ReturnType<typeof setTimeout> | null = null
 
 const store = new NoteStore(app.getPath('userData'))
+
+// ── Update check ─────────────────────────────────────────────
+let updateAvailable: { version: string; url: string } | null = null
+
+function isNewerVersion(latest: string, current: string): boolean {
+  const parse = (v: string) => v.replace(/^v/, '').split('.').map(Number)
+  const l = parse(latest)
+  const c = parse(current)
+  for (let i = 0; i < Math.max(l.length, c.length); i++) {
+    const a = l[i] ?? 0; const b = c[i] ?? 0
+    if (a > b) return true
+    if (a < b) return false
+  }
+  return false
+}
+
+function checkForUpdate(): void {
+  const req = https.get(
+    {
+      hostname: 'api.github.com',
+      path: '/repos/bhavy67/hidden-notes/releases/latest',
+      headers: { 'User-Agent': `GhostPad/${app.getVersion()}`, 'Accept': 'application/vnd.github.v3+json' },
+      timeout: 8000,
+    },
+    (res) => {
+      if (res.statusCode !== 200) return
+      let raw = ''
+      res.on('data', (chunk: string) => { raw += chunk })
+      res.on('end', () => {
+        try {
+          const release = JSON.parse(raw) as { tag_name: string; html_url: string }
+          if (!isNewerVersion(release.tag_name, app.getVersion())) return
+          updateAvailable = { version: release.tag_name.replace(/^v/, ''), url: release.html_url }
+          updateTrayMenu()
+          if (Notification.isSupported()) {
+            const n = new Notification({
+              title: 'GhostPad update available',
+              body: `v${updateAvailable.version} is ready — click to download.`,
+              silent: true,
+            })
+            n.on('click', () => shell.openExternal(updateAvailable!.url))
+            n.show()
+          }
+        } catch { /* silent */ }
+      })
+    }
+  )
+  req.on('error', () => { /* silent */ })
+  req.on('timeout', () => req.destroy())
+}
 
 // ────────────────────────────────────────────────────────────
 // Main GhostPad panel window (tabbed)
@@ -479,12 +530,13 @@ function updateTrayMenu(): void {
   if (!tray) return
   const notes = store.all()
   const caveat = captureExclusionCaveat()
+  const version = app.getVersion()
 
   const notesSubmenu: Electron.MenuItemConstructorOptions[] =
     notes.length === 0
       ? [{ label: 'No notes yet', enabled: false }]
       : notes.map((n) => ({
-          label: `${n.visible ? '●' : '○'} ${noteLabel(n)}`,
+          label: `${n.poppedOut ? '↗' : n.visible ? '●' : '○'} ${noteLabel(n)}`,
           click: () => {
             if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow()
             else mainWindow.show()
@@ -495,9 +547,20 @@ function updateTrayMenu(): void {
     ? { label: '⚡ Hidden (panic mode) — press ⌘⇧. to restore', enabled: false }
     : { label: '⚡ Panic hide — hide everything (⌘⇧.)', click: () => panicToggle() }
 
-  const menu = Menu.buildFromTemplate([
+  const template: Electron.MenuItemConstructorOptions[] = [
     panicLabel,
     { type: 'separator' },
+  ]
+
+  // Prominent update notification at the top when available
+  if (updateAvailable) {
+    template.push(
+      { label: `🆕 Update available — v${updateAvailable.version}`, click: () => shell.openExternal(updateAvailable!.url) },
+      { type: 'separator' }
+    )
+  }
+
+  template.push(
     {
       label: panicActive ? 'GhostPad is hidden' : 'Show GhostPad',
       enabled: !panicActive,
@@ -516,29 +579,34 @@ function updateTrayMenu(): void {
     }},
     { label: 'Notes', submenu: notesSubmenu },
     { type: 'separator' },
-    {
-      label: caveat ? caveat : '● Notes invisible to screen sharing',
-      enabled: false
-    },
+    { label: caveat ? caveat : '● Notes invisible to screen sharing', enabled: false },
     { label: 'Test screen sharing protection…', click: () => { runProtectionTest().catch(console.error) } },
     { type: 'separator' },
     {
-      label: `GhostPad v${app.getVersion()}`,
+      label: updateAvailable
+        ? `GhostPad v${version}  (v${updateAvailable.version} available)`
+        : `GhostPad v${version}`,
       click: () => {
         dialog.showMessageBox({
           type: 'info',
           title: 'About GhostPad',
-          message: 'GhostPad',
-          detail: `Version ${app.getVersion()}\nInvisible sticky notes for client calls.\nInvisible to screen sharing & recording.\n\n⚡ Panic hide: ⌘⇧. — instantly hide/restore all notes`
+          message: `GhostPad v${version}`,
+          detail: updateAvailable
+            ? `A new version (v${updateAvailable.version}) is available.\nClick "Download update" in the tray menu to get it.\n\nInvisible sticky notes — hidden from screen sharing & recording.`
+            : `Invisible sticky notes for client calls.\nHidden from screen sharing & recording at the OS level.\n\n⚡ Panic hide: ⌘⇧. — instantly hide/restore all notes`
         })
       }
     },
     { type: 'separator' },
     { label: 'Quit GhostPad', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() }
-  ])
+  )
 
-  tray.setContextMenu(menu)
-  tray.setToolTip(panicActive ? 'GhostPad — hidden (⌘⇧. to restore)' : 'GhostPad')
+  tray.setContextMenu(Menu.buildFromTemplate(template))
+
+  const baseTooltip = updateAvailable
+    ? `GhostPad v${version} — v${updateAvailable.version} update available`
+    : `GhostPad v${version}`
+  tray.setToolTip(panicActive ? `GhostPad v${version} — hidden (⌘⇧. to restore)` : baseTooltip)
 }
 
 function setupTray(): void {
@@ -582,6 +650,9 @@ if (!gotLock) {
         color: nativeTheme.shouldUseDarkColors ? 'dark' : 'yellow'
       })
     }
+
+    // Check for updates 20s after startup — silent, non-blocking
+    setTimeout(() => checkForUpdate(), 20_000)
 
     registerShortcuts({
       newNote: () => {
