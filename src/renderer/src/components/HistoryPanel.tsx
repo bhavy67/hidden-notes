@@ -37,7 +37,17 @@ export default function HistoryPanel({ noteId, onRestore, onClose, isDark }: His
   return (
     <div className={`flex flex-col border-b backdrop-blur-sm ${bg}`} style={{ maxHeight: 180 }}>
       <div className="flex items-center justify-between px-3 py-1.5">
-        <span className={`text-[10px] font-semibold uppercase tracking-wide ${textSub}`}>Note history</span>
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] font-semibold uppercase tracking-wide ${textSub}`}>Note history</span>
+          {snapshots.length > 0 && (
+            <span className={`text-[9px] tabular-nums ${snapshots.length >= 20 ? 'text-amber-500/80' : textSub}`}>
+              {snapshots.length} / 25
+            </span>
+          )}
+          {snapshots.length >= 20 && (
+            <span className="text-[9px] text-amber-500/70">— oldest will be removed</span>
+          )}
+        </div>
         <button onMouseDown={onClose} className={`text-xs opacity-40 hover:opacity-80 ${textMain}`}>✕</button>
       </div>
 

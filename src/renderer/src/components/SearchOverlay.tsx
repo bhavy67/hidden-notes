@@ -24,7 +24,9 @@ function snippet(content: string, query: string, maxLen = 80): string {
 
 export default function SearchOverlay({ notes, onSelect, onClose, isDark }: SearchOverlayProps) {
   const [query, setQuery] = useState('')
+  const [selectedIdx, setSelectedIdx] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
+  const resultRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
@@ -36,12 +38,34 @@ export default function SearchOverlay({ notes, onSelect, onClose, isDark }: Sear
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  // Reset selection when the query changes
+  useEffect(() => { setSelectedIdx(-1) }, [query])
+
+  // Scroll the highlighted result into view
+  useEffect(() => {
+    if (selectedIdx >= 0) resultRefs.current[selectedIdx]?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIdx])
+
   const filtered = query.trim().length < 1
     ? notes
     : notes.filter((n) => {
         const q = query.toLowerCase()
         return n.content.toLowerCase().includes(q) || n.title.toLowerCase().includes(q)
       })
+
+  function handleInputKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!filtered.length) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedIdx(i => Math.min(i + 1, filtered.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedIdx(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      const target = selectedIdx >= 0 ? filtered[selectedIdx] : filtered[0]
+      if (target) { onSelect(target.id); onClose() }
+    }
+  }
 
   const bg = isDark ? 'bg-black/30 border-white/10' : 'bg-white/40 border-black/8'
   const inputBg = isDark ? 'bg-white/10 text-white placeholder:text-white/40' : 'bg-black/5 text-black/80 placeholder:text-black/35'
@@ -58,10 +82,14 @@ export default function SearchOverlay({ notes, onSelect, onClose, isDark }: Sear
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleInputKey}
           placeholder="Search notes…"
           className={`selectable flex-1 bg-transparent outline-none text-xs ${inputBg.split(' ').slice(1).join(' ')}`}
           style={{ color: isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.75)' }}
         />
+        {query.trim() && filtered.length > 1 && (
+          <span className={`text-[9px] opacity-30 select-none ${rowText}`}>↑↓</span>
+        )}
         <button
           onMouseDown={onClose}
           className={`text-xs opacity-40 hover:opacity-80 ${rowText}`}
@@ -74,15 +102,22 @@ export default function SearchOverlay({ notes, onSelect, onClose, isDark }: Sear
           {filtered.length === 0 ? (
             <p className={`px-3 pb-2 text-xs ${snippetText}`}>No results</p>
           ) : (
-            filtered.map((note) => {
+            filtered.map((note, i) => {
               const colorConf = NOTE_COLORS[note.color] ?? NOTE_COLORS.yellow
               const dot = `rgb(${colorConf.tint})`
               const text = note.content
+              const isSelected = i === selectedIdx
               return (
                 <button
                   key={note.id}
+                  ref={el => { resultRefs.current[i] = el }}
                   onMouseDown={() => { onSelect(note.id); onClose() }}
-                  className={`w-full text-left flex items-start gap-2 px-3 py-1.5 ${rowHover} transition-colors`}
+                  onMouseEnter={() => setSelectedIdx(i)}
+                  className={`w-full text-left flex items-start gap-2 px-3 py-1.5 transition-colors ${
+                    isSelected
+                      ? (isDark ? 'bg-white/15' : 'bg-black/8')
+                      : rowHover
+                  }`}
                 >
                   <span className="w-2 h-2 rounded-full mt-1 flex-shrink-0 border border-black/10" style={{ background: dot }} />
                   <div className="min-w-0">

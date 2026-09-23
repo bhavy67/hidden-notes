@@ -35,11 +35,14 @@ export default function Toolbar({
       <ColorPicker value={note.color} dark={isDark} onChange={(c: NoteColor) => onUpdate({ color: c })} />
 
       {/* ── Font size ── */}
-      <Tooltip label="Smaller text">
-        <button onMouseDown={() => onUpdate({ fontSize: Math.max(10, note.fontSize - 1) })} className={btn}>A−</button>
+      <Tooltip label="Smaller text" shortcut="−2px">
+        <button onMouseDown={() => onUpdate({ fontSize: Math.max(10, note.fontSize - 2) })} className={btn}>A−</button>
       </Tooltip>
-      <Tooltip label="Larger text">
-        <button onMouseDown={() => onUpdate({ fontSize: Math.min(32, note.fontSize + 1) })} className={btn}>A+</button>
+      <span
+        className={`text-[10px] tabular-nums font-medium select-none px-0.5 ${isDark ? 'text-white/30' : 'text-black/30'}`}
+      >{note.fontSize}</span>
+      <Tooltip label="Larger text" shortcut="+2px">
+        <button onMouseDown={() => onUpdate({ fontSize: Math.min(32, note.fontSize + 2) })} className={btn}>A+</button>
       </Tooltip>
 
       <div className="flex-1" />

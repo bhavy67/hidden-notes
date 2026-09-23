@@ -68,17 +68,24 @@ function TabItem({
         style={{ background: dotColor }}
       />
       {editing ? (
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commitEdit}
-          onKeyDown={handleKeyDown}
-          onClick={(e) => e.stopPropagation()}
-          className="selectable w-full bg-transparent outline-none text-xs min-w-0"
-          style={{ WebkitUserSelect: 'text' }}
-          autoFocus
-        />
+        <div className="flex-1 flex items-center gap-1 min-w-0">
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={handleKeyDown}
+            onClick={(e) => e.stopPropagation()}
+            className="selectable flex-1 bg-transparent outline-none text-xs min-w-0"
+            style={{ WebkitUserSelect: 'text' }}
+            autoFocus
+          />
+          {draft.length > 45 && (
+            <span className={`text-[8px] flex-shrink-0 tabular-nums ${draft.length >= 55 ? 'text-amber-500/80' : 'text-black/30'}`}>
+              {draft.length}/60
+            </span>
+          )}
+        </div>
       ) : (
         <span className="truncate flex-1" title={label}>{label}</span>
       )}

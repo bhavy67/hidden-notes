@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, dialog, desktopCapturer, systemPreferences, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, dialog, desktopCapturer, systemPreferences, shell, nativeTheme } from 'electron'
 import path from 'path'
 import { NoteStore } from './store'
 import { Note, NotePatch, IPC } from './types'
@@ -474,7 +474,7 @@ if (!gotLock) {
       store.create({
         title: 'Tab 1',
         content: 'This note is invisible to screen sharing.\nDouble-click the tab name to rename it.',
-        color: 'yellow'
+        color: nativeTheme.shouldUseDarkColors ? 'dark' : 'yellow'
       })
     }
 
