@@ -8,6 +8,7 @@ interface ToolbarProps {
   onUpdate: (patch: Partial<Note>) => void
   onDelete: () => void
   onClose: () => void
+  onTogglePin: () => void
   showSearch: boolean
   onToggleSearch: () => void
   showHistory: boolean
@@ -17,7 +18,7 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({
-  note, onUpdate, onDelete, onClose,
+  note, onUpdate, onDelete, onClose, onTogglePin,
   showSearch, onToggleSearch,
   showHistory, onToggleHistory,
   showTags, onToggleTags,
@@ -57,6 +58,11 @@ export default function Toolbar({
       </Tooltip>
 
       <div className="flex-1" />
+
+      {/* ── Pin ── */}
+      <Tooltip label={note.pinned ? 'Unpin tab' : 'Pin tab to front'}>
+        <button onMouseDown={onTogglePin} className={`${btn} ${note.pinned ? on : ''}`}>📌</button>
+      </Tooltip>
 
       {/* ── Tags ── */}
       <Tooltip label="Tags">

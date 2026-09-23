@@ -6,6 +6,7 @@ import Toolbar from './components/Toolbar'
 import SearchOverlay from './components/SearchOverlay'
 import HistoryPanel from './components/HistoryPanel'
 import TagInput from './components/TagInput'
+import Onboarding from './components/Onboarding'
 
 export default function App() {
   const [notes, setNotes] = useState<Note[]>([])
@@ -13,6 +14,7 @@ export default function App() {
   const [showSearch, setShowSearch] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showTags, setShowTags] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   const pendingUpdates = useRef<Map<string, NotePatch>>(new Map())
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -25,12 +27,16 @@ export default function App() {
     setShowTags(false)
   }, [activeId])
 
-  // Load on mount
+  // Load on mount + check first-run
   useEffect(() => {
     window.ghostpad.getAllNotes().then((all) => {
       setNotes(all)
       if (all.length > 0) setActiveId(all[0].id)
     }).catch((err) => console.error('[GhostPad] Failed to load notes:', err))
+
+    window.ghostpad.getSetting('hasSeenOnboarding').then((v) => {
+      if (!v) setShowOnboarding(true)
+    }).catch(() => {/* non-fatal */})
   }, [])
 
   // Subscribe to main-process changes
@@ -121,6 +127,11 @@ export default function App() {
     await window.ghostpad.restoreSnapshot(activeNote.id, snapshotId)
   }
 
+  function handleTogglePin() {
+    if (!activeNote) return
+    scheduleUpdate(activeNote.id, { pinned: !activeNote.pinned })
+  }
+
   async function handleDelete() {
     if (!activeNote) return
     if (notes.length === 1) {
@@ -133,6 +144,12 @@ export default function App() {
   if (!activeNote) return null
   const colorConf = NOTE_COLORS[activeNote.color] ?? NOTE_COLORS.yellow
   const isDark = colorConf.dark
+
+  // Pinned notes always sort to the front
+  const sortedNotes = [...notes].sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+    return a.tabOrder - b.tabOrder
+  })
 
   return (
     <div
@@ -147,7 +164,7 @@ export default function App() {
       {/* Tab strip */}
       <div className="drag-handle flex-shrink-0" style={{ background: isDark ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.05)' }}>
         <TabBar
-          notes={notes} activeId={activeId}
+          notes={sortedNotes} activeId={activeId}
           onSelect={setActiveId}
           onCreate={handleCreate}
           onClose={handleClose}
@@ -198,10 +215,21 @@ export default function App() {
         note={activeNote} onUpdate={handleUpdate}
         onDelete={handleDelete}
         onClose={() => window.ghostpad.closeWindow()}
+        onTogglePin={handleTogglePin}
         showSearch={showSearch} onToggleSearch={() => { setShowSearch((s) => !s); setShowHistory(false) }}
         showHistory={showHistory} onToggleHistory={() => { setShowHistory((h) => !h); setShowSearch(false) }}
         showTags={showTags} onToggleTags={() => setShowTags((t) => !t)}
       />
+
+      {showOnboarding && (
+        <Onboarding
+          isDark={isDark}
+          onDismiss={() => {
+            setShowOnboarding(false)
+            window.ghostpad.setSetting('hasSeenOnboarding', '1').catch(() => {})
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { Note, NotePatch, ContentType, NoteColor, NoteSnapshot } from './types'
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 function generateId(): string {
   return 'note-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6)
@@ -19,7 +19,7 @@ function defaultNote(overrides: Partial<Note> = {}): Note {
     opacity: overrides.opacity ?? 0.88,
     fontSize: overrides.fontSize ?? 15,
     tags: overrides.tags ?? [],
-    pinned: overrides.pinned ?? true,
+    pinned: overrides.pinned ?? false,
     ghost: overrides.ghost ?? false,
     visible: overrides.visible ?? true,
     tabOrder: overrides.tabOrder ?? 0,
@@ -73,6 +73,10 @@ export class NoteStore {
         FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_history_note_id ON note_history(note_id, saved_at DESC);
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL DEFAULT ''
+      );
     `)
 
     const row = this.db.prepare('SELECT version FROM schema_version LIMIT 1').get() as
@@ -91,6 +95,10 @@ export class NoteStore {
       try {
         this.db.exec(`ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'`)
       } catch { /* column already present on fresh installs */ }
+    }
+    if (row.version < 4) {
+      // Repurpose `pinned` for tab-pinning; reset to 0 so no note appears pinned by default
+      this.db.exec(`UPDATE notes SET pinned = 0`)
     }
     if (row.version < SCHEMA_VERSION) {
       this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION)
@@ -218,6 +226,21 @@ export class NoteStore {
       content: r.content,
       savedAt: r.saved_at,
     }))
+  }
+
+  // ── Settings ─────────────────────────────────────────────
+
+  getSetting(key: string): string | null {
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+      | { value: string }
+      | undefined
+    return row?.value ?? null
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db
+      .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run(key, value)
   }
 
   close(): void {

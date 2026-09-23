@@ -34,6 +34,10 @@ const api = {
     ipcRenderer.on(IPC.PANIC_PRE, handler)
     return () => ipcRenderer.removeListener(IPC.PANIC_PRE, handler)
   },
+  // ── settings ─────────────────────────────────────────────
+  getSetting: (key: string): Promise<string | null> => ipcRenderer.invoke(IPC.SETTINGS_GET, key),
+  setSetting: (key: string, value: string): Promise<void> => ipcRenderer.invoke(IPC.SETTINGS_SET, key, value),
+
   // ── utils ─────────────────────────────────────────────────
   getQueryParams: (): Record<string, string> => {
     const params = new URLSearchParams(window.location.search)

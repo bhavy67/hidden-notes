@@ -67,6 +67,7 @@ function TabItem({
         className="w-2 h-2 rounded-full flex-shrink-0 border border-black/10"
         style={{ background: dotColor }}
       />
+      {note.pinned && <span className="text-[8px] flex-shrink-0 leading-none">📌</span>}
       {editing ? (
         <div className="flex-1 flex items-center gap-1 min-w-0">
           <input

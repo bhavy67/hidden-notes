@@ -210,6 +210,16 @@ ipcMain.handle(IPC.HISTORY_RESTORE, (_e, noteId: string, snapshotId: number) => 
   }
 })
 
+ipcMain.handle(IPC.SETTINGS_GET, (_e, key: string) => {
+  try { return store.getSetting(key) }
+  catch (err) { console.error('[GhostPad] settings:get failed:', err); return null }
+})
+
+ipcMain.handle(IPC.SETTINGS_SET, (_e, key: string, value: string) => {
+  try { store.setSetting(key, value) }
+  catch (err) { console.error('[GhostPad] settings:set failed:', err) }
+})
+
 // ────────────────────────────────────────────────────────────
 // Protection test
 // ────────────────────────────────────────────────────────────
