@@ -20,6 +20,7 @@ export interface Note {
   color: NoteColor
   opacity: number          // 0.3 – 1.0
   fontSize: number         // 10 – 32
+  tags: string[]
   pinned: boolean
   ghost: boolean
   visible: boolean

@@ -5,12 +5,14 @@ import NoteContent from './components/NoteContent'
 import Toolbar from './components/Toolbar'
 import SearchOverlay from './components/SearchOverlay'
 import HistoryPanel from './components/HistoryPanel'
+import TagInput from './components/TagInput'
 
 export default function App() {
   const [notes, setNotes] = useState<Note[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [showSearch, setShowSearch] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [showTags, setShowTags] = useState(false)
 
   const pendingUpdates = useRef<Map<string, NotePatch>>(new Map())
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -20,6 +22,7 @@ export default function App() {
   // Reset UI panels when switching tabs
   useEffect(() => {
     setShowHistory(false)
+    setShowTags(false)
   }, [activeId])
 
   // Load on mount
@@ -172,6 +175,15 @@ export default function App() {
         />
       )}
 
+      {/* Tags strip */}
+      {showTags && (
+        <TagInput
+          tags={activeNote.tags}
+          onChange={(tags) => handleUpdate({ tags })}
+          isDark={isDark}
+        />
+      )}
+
       {/* Note content */}
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         <NoteContent
@@ -188,6 +200,7 @@ export default function App() {
         onClose={() => window.ghostpad.closeWindow()}
         showSearch={showSearch} onToggleSearch={() => { setShowSearch((s) => !s); setShowHistory(false) }}
         showHistory={showHistory} onToggleHistory={() => { setShowHistory((h) => !h); setShowSearch(false) }}
+        showTags={showTags} onToggleTags={() => setShowTags((t) => !t)}
       />
     </div>
   )

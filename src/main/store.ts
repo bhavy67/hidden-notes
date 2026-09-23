@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import { Note, NotePatch, ContentType, NoteColor, NoteSnapshot } from './types'
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 function generateId(): string {
   return 'note-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6)
@@ -18,6 +18,7 @@ function defaultNote(overrides: Partial<Note> = {}): Note {
     color: overrides.color ?? 'yellow',
     opacity: overrides.opacity ?? 0.88,
     fontSize: overrides.fontSize ?? 15,
+    tags: overrides.tags ?? [],
     pinned: overrides.pinned ?? true,
     ghost: overrides.ghost ?? false,
     visible: overrides.visible ?? true,
@@ -83,14 +84,22 @@ export class NoteStore {
       return
     }
 
-    // v1 → v2: drop checklist_items column (SQLite doesn't support DROP COLUMN before 3.35,
-    // so we just leave it and ignore it going forward — it wastes no meaningful space)
+    // v1 → v2: checklist_items column left in place (DROP COLUMN unsupported before SQLite 3.35)
+    // v2 → v3: add tags column (ALTER TABLE is safe to call even if the column already
+    //           exists on a fresh install that used the v3 CREATE TABLE)
+    if (row.version < 3) {
+      try {
+        this.db.exec(`ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'`)
+      } catch { /* column already present on fresh installs */ }
+    }
     if (row.version < SCHEMA_VERSION) {
       this.db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION)
     }
   }
 
   private rowToNote(row: Record<string, unknown>): Note {
+    let tags: string[] = []
+    try { tags = JSON.parse((row.tags as string) || '[]') } catch { tags = [] }
     return {
       id: row.id as string,
       title: row.title as string,
@@ -99,6 +108,7 @@ export class NoteStore {
       color: row.color as NoteColor,
       opacity: row.opacity as number,
       fontSize: row.font_size as number,
+      tags,
       pinned: Boolean(row.pinned),
       ghost: Boolean(row.ghost),
       visible: Boolean(row.visible),
@@ -136,14 +146,14 @@ export class NoteStore {
     this.db
       .prepare(
         `INSERT INTO notes (
-          id, title, content, content_type, color, opacity, font_size,
+          id, title, content, content_type, color, opacity, font_size, tags,
           pinned, ghost, visible, tab_order, popped_out, x, y, width, height,
           display_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         note.id, note.title, note.content, note.contentType, note.color,
-        note.opacity, note.fontSize,
+        note.opacity, note.fontSize, JSON.stringify(note.tags),
         note.pinned ? 1 : 0, note.ghost ? 1 : 0, note.visible ? 1 : 0,
         note.tabOrder, 0,
         null, null, 400, 320,
@@ -159,13 +169,13 @@ export class NoteStore {
     this.db
       .prepare(
         `UPDATE notes SET
-          title = ?, content = ?, content_type = ?, color = ?, opacity = ?, font_size = ?,
+          title = ?, content = ?, content_type = ?, color = ?, opacity = ?, font_size = ?, tags = ?,
           pinned = ?, ghost = ?, visible = ?, tab_order = ?, updated_at = ?
         WHERE id = ?`
       )
       .run(
         merged.title, merged.content, merged.contentType, merged.color,
-        merged.opacity, merged.fontSize,
+        merged.opacity, merged.fontSize, JSON.stringify(merged.tags),
         merged.pinned ? 1 : 0, merged.ghost ? 1 : 0, merged.visible ? 1 : 0,
         merged.tabOrder, merged.updatedAt, id
       )

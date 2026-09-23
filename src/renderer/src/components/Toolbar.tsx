@@ -12,12 +12,15 @@ interface ToolbarProps {
   onToggleSearch: () => void
   showHistory: boolean
   onToggleHistory: () => void
+  showTags: boolean
+  onToggleTags: () => void
 }
 
 export default function Toolbar({
   note, onUpdate, onDelete, onClose,
   showSearch, onToggleSearch,
   showHistory, onToggleHistory,
+  showTags, onToggleTags,
 }: ToolbarProps) {
   const isDark = note.color === 'dark'
 
@@ -45,7 +48,20 @@ export default function Toolbar({
         <button onMouseDown={() => onUpdate({ fontSize: Math.min(32, note.fontSize + 2) })} className={btn}>A+</button>
       </Tooltip>
 
+      {/* ── Markdown mode ── */}
+      <Tooltip label={note.contentType === 'markdown' ? 'Plain text mode' : 'Markdown mode'}>
+        <button
+          onMouseDown={() => onUpdate({ contentType: note.contentType === 'markdown' ? 'text' : 'markdown' })}
+          className={`${btn} ${note.contentType === 'markdown' ? on : ''} font-mono text-[10px]`}
+        >MD</button>
+      </Tooltip>
+
       <div className="flex-1" />
+
+      {/* ── Tags ── */}
+      <Tooltip label="Tags">
+        <button onMouseDown={onToggleTags} className={`${btn} ${showTags ? on : ''}`}>#</button>
+      </Tooltip>
 
       {/* ── Search ── */}
       <Tooltip label="Search notes" shortcut="⌘F">

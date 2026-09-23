@@ -50,7 +50,11 @@ export default function SearchOverlay({ notes, onSelect, onClose, isDark }: Sear
     ? notes
     : notes.filter((n) => {
         const q = query.toLowerCase()
-        return n.content.toLowerCase().includes(q) || n.title.toLowerCase().includes(q)
+        return (
+          n.content.toLowerCase().includes(q) ||
+          n.title.toLowerCase().includes(q) ||
+          n.tags.some((t) => t.toLowerCase().includes(q))
+        )
       })
 
   function handleInputKey(e: React.KeyboardEvent<HTMLInputElement>) {
