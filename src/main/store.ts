@@ -20,6 +20,7 @@ function defaultNote(overrides: Partial<Note> = {}): Note {
     fontSize: overrides.fontSize ?? 15,
     tags: overrides.tags ?? [],
     pinned: overrides.pinned ?? false,
+    poppedOut: overrides.poppedOut ?? false,
     ghost: overrides.ghost ?? false,
     visible: overrides.visible ?? true,
     tabOrder: overrides.tabOrder ?? 0,
@@ -118,6 +119,7 @@ export class NoteStore {
       fontSize: row.font_size as number,
       tags,
       pinned: Boolean(row.pinned),
+      poppedOut: Boolean(row.popped_out),
       ghost: Boolean(row.ghost),
       visible: Boolean(row.visible),
       tabOrder: row.tab_order as number,
@@ -178,13 +180,13 @@ export class NoteStore {
       .prepare(
         `UPDATE notes SET
           title = ?, content = ?, content_type = ?, color = ?, opacity = ?, font_size = ?, tags = ?,
-          pinned = ?, ghost = ?, visible = ?, tab_order = ?, updated_at = ?
+          pinned = ?, popped_out = ?, ghost = ?, visible = ?, tab_order = ?, updated_at = ?
         WHERE id = ?`
       )
       .run(
         merged.title, merged.content, merged.contentType, merged.color,
         merged.opacity, merged.fontSize, JSON.stringify(merged.tags),
-        merged.pinned ? 1 : 0, merged.ghost ? 1 : 0, merged.visible ? 1 : 0,
+        merged.pinned ? 1 : 0, merged.poppedOut ? 1 : 0, merged.ghost ? 1 : 0, merged.visible ? 1 : 0,
         merged.tabOrder, merged.updatedAt, id
       )
     return merged
@@ -226,6 +228,21 @@ export class NoteStore {
       content: r.content,
       savedAt: r.saved_at,
     }))
+  }
+
+  // ── Geometry ─────────────────────────────────────────────
+
+  getGeometry(id: string): { x: number | null; y: number | null; width: number; height: number } | null {
+    const row = this.db.prepare('SELECT x, y, width, height FROM notes WHERE id = ?').get(id) as
+      | { x: number | null; y: number | null; width: number; height: number }
+      | undefined
+    return row ? { x: row.x, y: row.y, width: row.width || 400, height: row.height || 320 } : null
+  }
+
+  updateGeometry(id: string, geo: { x: number; y: number; width: number; height: number; displayId: string }): void {
+    this.db
+      .prepare('UPDATE notes SET x = ?, y = ?, width = ?, height = ?, display_id = ? WHERE id = ?')
+      .run(geo.x, geo.y, geo.width, geo.height, geo.displayId, id)
   }
 
   // ── Settings ─────────────────────────────────────────────

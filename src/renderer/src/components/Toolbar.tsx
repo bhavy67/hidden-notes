@@ -9,6 +9,7 @@ interface ToolbarProps {
   onDelete: () => void
   onClose: () => void
   onTogglePin: () => void
+  onTogglePopout?: () => void
   showSearch: boolean
   onToggleSearch: () => void
   showHistory: boolean
@@ -18,7 +19,7 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({
-  note, onUpdate, onDelete, onClose, onTogglePin,
+  note, onUpdate, onDelete, onClose, onTogglePin, onTogglePopout,
   showSearch, onToggleSearch,
   showHistory, onToggleHistory,
   showTags, onToggleTags,
@@ -78,6 +79,15 @@ export default function Toolbar({
       <Tooltip label="Note history">
         <button onMouseDown={onToggleHistory} className={`${btn} ${showHistory ? on : ''}`}>🕐</button>
       </Tooltip>
+
+      {/* ── Pop-out / merge-back ── */}
+      {onTogglePopout && (
+        <Tooltip label={note.poppedOut ? 'Merge back to main window' : 'Pop out into own window'}>
+          <button onMouseDown={onTogglePopout} className={btn}>
+            {note.poppedOut ? '↙' : '↗'}
+          </button>
+        </Tooltip>
+      )}
 
       {/* ── Delete ── */}
       <Tooltip label="Delete this note">

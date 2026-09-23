@@ -8,6 +8,7 @@ interface TabBarProps {
   onCreate: () => void
   onClose: (id: string) => void
   onRename: (id: string, title: string) => void
+  onFocusPopout: (id: string) => void
 }
 
 function TabItem({
@@ -57,9 +58,11 @@ function TabItem({
       className={`
         no-drag relative flex items-center gap-1.5 px-3 py-1 rounded-t-lg cursor-pointer
         select-none text-xs font-medium max-w-[130px] min-w-[80px] group transition-all
-        ${isActive
-          ? 'bg-white/30 text-black/80 shadow-sm'
-          : 'bg-black/5 text-black/50 hover:bg-black/10 hover:text-black/70'
+        ${note.poppedOut
+          ? 'bg-black/5 text-black/30 italic'
+          : isActive
+            ? 'bg-white/30 text-black/80 shadow-sm'
+            : 'bg-black/5 text-black/50 hover:bg-black/10 hover:text-black/70'
         }
       `}
     >
@@ -68,6 +71,7 @@ function TabItem({
         style={{ background: dotColor }}
       />
       {note.pinned && <span className="text-[8px] flex-shrink-0 leading-none">📌</span>}
+      {note.poppedOut && <span className="text-[8px] flex-shrink-0 leading-none opacity-50">↗</span>}
       {editing ? (
         <div className="flex-1 flex items-center gap-1 min-w-0">
           <input
@@ -106,7 +110,7 @@ function TabItem({
   )
 }
 
-export default function TabBar({ notes, activeId, onSelect, onCreate, onClose, onRename }: TabBarProps) {
+export default function TabBar({ notes, activeId, onSelect, onCreate, onClose, onRename, onFocusPopout }: TabBarProps) {
   return (
     <div className="drag-handle flex items-end gap-0.5 px-2 pt-2 overflow-x-auto min-h-[38px]">
       {notes.map((note) => (
@@ -114,7 +118,7 @@ export default function TabBar({ notes, activeId, onSelect, onCreate, onClose, o
           key={note.id}
           note={note}
           isActive={note.id === activeId}
-          onSelect={() => onSelect(note.id)}
+          onSelect={() => note.poppedOut ? onFocusPopout(note.id) : onSelect(note.id)}
           onClose={() => onClose(note.id)}
           onRename={(title) => onRename(note.id, title)}
         />

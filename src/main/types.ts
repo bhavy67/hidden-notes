@@ -22,6 +22,7 @@ export interface Note {
   fontSize: number         // 10 – 32
   tags: string[]
   pinned: boolean
+  poppedOut: boolean
   ghost: boolean
   visible: boolean
   tabOrder: number
@@ -53,6 +54,8 @@ export const IPC = {
   PANIC_FLUSH_DONE: 'panic:flush-done', // renderer → main: pending edits flushed, safe to hide
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
+  NOTE_POPOUT: 'note:popout',
+  NOTE_POPIN:  'note:popin',
   // main → renderer
   NOTES_CHANGED: 'notes:changed',
   PANIC_PRE: 'panic:pre',               // main → renderer: flush pending edits before hide

@@ -3,16 +3,19 @@ import path from 'path'
 import { NoteStore } from './store'
 import { Note, NotePatch, IPC } from './types'
 import { setPinned, applyContentProtection, hideDockIcon, captureExclusionCaveat, isMac, isWindows, isWindowsBuildSupported } from './platform'
+import { clampToVisibleDisplay, displayIdForPoint } from './displayUtils'
 import { registerShortcuts, unregisterAll } from './shortcuts'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+const popoutWindows = new Map<string, BrowserWindow>()
 
 // ── Panic hide state ────────────────────────────────────────
 let panicActive = false
-let panicMainWasVisible = false
+let panicVisibleWindows: BrowserWindow[] = []
+let panicFlushRemaining = 0
 let panicHideTimer: ReturnType<typeof setTimeout> | null = null
 
 const store = new NoteStore(app.getPath('userData'))
@@ -30,7 +33,7 @@ function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width,
     height,
-    x: wa.x + wa.width - width - 32,
+    x: wa.x + Math.round((wa.width - width) / 2),
     y: wa.y + 40,
     frame: false,
     transparent: true,
@@ -78,40 +81,47 @@ function createMainWindow(): BrowserWindow {
 // Panic hide — instant hide/restore of the GhostPad window
 // ────────────────────────────────────────────────────────────
 
+function allManagedWindows(): BrowserWindow[] {
+  const wins: BrowserWindow[] = []
+  if (mainWindow && !mainWindow.isDestroyed()) wins.push(mainWindow)
+  for (const w of popoutWindows.values()) if (!w.isDestroyed()) wins.push(w)
+  return wins
+}
+
 function panicToggle(): void {
   if (!panicActive) {
     panicActive = true
-    panicMainWasVisible = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
-    if (panicMainWasVisible) {
-      // Ask renderer to flush any pending edits first, then hide when confirmed.
-      // IPC messages are ordered — all pending notes:update calls from the renderer
-      // will be processed before panic:flush-done arrives, guaranteeing no data loss.
-      broadcast(IPC.PANIC_PRE, null)
-      // Safety fallback: hide after 300ms even if the renderer never responds
-      panicHideTimer = setTimeout(() => {
-        panicHideTimer = null
-        mainWindow?.hide()
-      }, 300)
-    }
+    panicVisibleWindows = allManagedWindows().filter((w) => w.isVisible())
+    if (panicVisibleWindows.length === 0) { panicActive = false; return }
+
+    panicFlushRemaining = panicVisibleWindows.length
+    // Ask every visible window to flush pending edits before hiding
+    for (const w of panicVisibleWindows) w.webContents.send(IPC.PANIC_PRE, null)
+    // Safety fallback: hide everything after 300ms
+    panicHideTimer = setTimeout(() => {
+      panicHideTimer = null
+      for (const w of panicVisibleWindows) if (!w.isDestroyed()) w.hide()
+    }, 300)
   } else {
     if (panicHideTimer) { clearTimeout(panicHideTimer); panicHideTimer = null }
     panicActive = false
-    if (panicMainWasVisible) {
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        mainWindow = createMainWindow()
-      } else {
-        applyContentProtection(mainWindow)
-        mainWindow.showInactive()
-      }
+    panicFlushRemaining = 0
+    for (const w of panicVisibleWindows) {
+      if (!w.isDestroyed()) { applyContentProtection(w); w.showInactive() }
     }
+    panicVisibleWindows = []
   }
   updateTrayMenu()
 }
 
-// Renderer confirmed all pending edits are flushed — now safe to hide
+// Each window confirms flush; hide all once every window has responded
 ipcMain.on(IPC.PANIC_FLUSH_DONE, () => {
-  if (panicHideTimer) { clearTimeout(panicHideTimer); panicHideTimer = null }
-  if (panicActive && panicMainWasVisible) mainWindow?.hide()
+  if (!panicActive) return
+  panicFlushRemaining = Math.max(0, panicFlushRemaining - 1)
+  if (panicFlushRemaining === 0) {
+    if (panicHideTimer) { clearTimeout(panicHideTimer); panicHideTimer = null }
+    for (const w of panicVisibleWindows) if (!w.isDestroyed()) w.hide()
+  }
 })
 
 // ────────────────────────────────────────────────────────────
@@ -119,9 +129,7 @@ ipcMain.on(IPC.PANIC_FLUSH_DONE, () => {
 // ────────────────────────────────────────────────────────────
 
 function broadcast(channel: string, payload: unknown): void {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(channel, payload)
-  }
+  for (const w of allManagedWindows()) w.webContents.send(channel, payload)
 }
 
 // ────────────────────────────────────────────────────────────
@@ -218,6 +226,93 @@ ipcMain.handle(IPC.SETTINGS_GET, (_e, key: string) => {
 ipcMain.handle(IPC.SETTINGS_SET, (_e, key: string, value: string) => {
   try { store.setSetting(key, value) }
   catch (err) { console.error('[GhostPad] settings:set failed:', err) }
+})
+
+// ────────────────────────────────────────────────────────────
+// Pop-out windows — each note can float in its own window
+// ────────────────────────────────────────────────────────────
+
+function createPopoutWindow(note: Note): BrowserWindow {
+  const geo = store.getGeometry(note.id)
+  const w = geo?.width || 400
+  const h = geo?.height || 320
+  const clamped = clampToVisibleDisplay({ x: geo?.x ?? undefined, y: geo?.y ?? undefined, width: w, height: h })
+
+  const win = new BrowserWindow({
+    width: clamped.width, height: clamped.height,
+    x: clamped.x, y: clamped.y,
+    frame: false, transparent: true, resizable: true,
+    hasShadow: false, skipTaskbar: true,
+    minWidth: 260, minHeight: 200,
+    backgroundColor: '#00000000',
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true, nodeIntegration: false, sandbox: false,
+    }
+  })
+
+  setPinned(win, true)
+  applyContentProtection(win)
+
+  const query = { noteId: note.id, popout: 'true' }
+  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
+    const u = new URL(process.env['ELECTRON_RENDERER_URL'])
+    u.search = new URLSearchParams(query).toString()
+    win.loadURL(u.toString())
+  } else {
+    win.loadFile(path.join(__dirname, '../renderer/index.html'), { query })
+  }
+
+  win.once('ready-to-show', () => { applyContentProtection(win); win.showInactive() })
+  win.on('show', () => applyContentProtection(win))
+  win.on('restore', () => applyContentProtection(win))
+
+  const saveGeometry = () => {
+    if (win.isDestroyed()) return
+    const [x, y] = win.getPosition()
+    const [width, height] = win.getSize()
+    const displayId = displayIdForPoint(x, y)
+    store.updateGeometry(note.id, { x, y, width, height, displayId })
+  }
+  win.on('moved', saveGeometry)
+  win.on('resized', saveGeometry)
+
+  win.on('closed', () => {
+    popoutWindows.delete(note.id)
+    try {
+      store.update(note.id, { poppedOut: false })
+      broadcast(IPC.NOTES_CHANGED, store.all())
+    } catch { /* window may close after store is gone at quit */ }
+  })
+
+  return win
+}
+
+ipcMain.handle(IPC.NOTE_POPOUT, (_e, noteId: string) => {
+  try {
+    const existing = popoutWindows.get(noteId)
+    if (existing && !existing.isDestroyed()) {
+      existing.show(); existing.focus(); return
+    }
+    const note = store.get(noteId)
+    if (!note) return
+    store.update(noteId, { poppedOut: true })
+    const win = createPopoutWindow(note)
+    popoutWindows.set(noteId, win)
+    broadcast(IPC.NOTES_CHANGED, store.all())
+  } catch (err) { console.error('[GhostPad] note:popout failed:', err) }
+})
+
+ipcMain.handle(IPC.NOTE_POPIN, (_e, noteId: string) => {
+  try {
+    const win = popoutWindows.get(noteId)
+    if (win && !win.isDestroyed()) win.close()
+    else {
+      store.update(noteId, { poppedOut: false })
+      broadcast(IPC.NOTES_CHANGED, store.all())
+    }
+  } catch (err) { console.error('[GhostPad] note:popin failed:', err) }
 })
 
 // ────────────────────────────────────────────────────────────
@@ -498,9 +593,13 @@ if (!gotLock) {
         void note
       },
       toggleHideAll: () => {
-        if (mainWindow) {
-          if (mainWindow.isVisible()) mainWindow.hide()
+        const wins = allManagedWindows()
+        const anyVisible = wins.some((w) => w.isVisible())
+        if (anyVisible) { wins.forEach((w) => w.hide()) }
+        else {
+          if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow()
           else { mainWindow.show(); mainWindow.focus() }
+          for (const w of popoutWindows.values()) if (!w.isDestroyed()) { w.show(); w.focus() }
         }
       },
       openManager: () => {

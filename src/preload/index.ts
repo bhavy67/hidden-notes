@@ -34,6 +34,10 @@ const api = {
     ipcRenderer.on(IPC.PANIC_PRE, handler)
     return () => ipcRenderer.removeListener(IPC.PANIC_PRE, handler)
   },
+  // ── pop-out windows ──────────────────────────────────────
+  popoutNote: (noteId: string): Promise<void> => ipcRenderer.invoke(IPC.NOTE_POPOUT, noteId),
+  popinNote:  (noteId: string): Promise<void> => ipcRenderer.invoke(IPC.NOTE_POPIN, noteId),
+
   // ── settings ─────────────────────────────────────────────
   getSetting: (key: string): Promise<string | null> => ipcRenderer.invoke(IPC.SETTINGS_GET, key),
   setSetting: (key: string, value: string): Promise<void> => ipcRenderer.invoke(IPC.SETTINGS_SET, key, value),

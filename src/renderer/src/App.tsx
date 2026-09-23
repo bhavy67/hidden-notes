@@ -169,6 +169,7 @@ export default function App() {
           onCreate={handleCreate}
           onClose={handleClose}
           onRename={(id, title) => scheduleUpdate(id, { title })}
+          onFocusPopout={(id) => window.ghostpad.popoutNote(id)}
         />
       </div>
 
@@ -216,6 +217,10 @@ export default function App() {
         onDelete={handleDelete}
         onClose={() => window.ghostpad.closeWindow()}
         onTogglePin={handleTogglePin}
+        onTogglePopout={() => {
+          if (activeNote.poppedOut) window.ghostpad.popinNote(activeNote.id)
+          else window.ghostpad.popoutNote(activeNote.id)
+        }}
         showSearch={showSearch} onToggleSearch={() => { setShowSearch((s) => !s); setShowHistory(false) }}
         showHistory={showHistory} onToggleHistory={() => { setShowHistory((h) => !h); setShowSearch(false) }}
         showTags={showTags} onToggleTags={() => setShowTags((t) => !t)}
