@@ -1,6 +1,6 @@
 {
   "name": "ghostpad",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Invisible sticky notes for client calls — hidden from screen sharing",
   "main": "out/main/index.js",
   "author": "GhostPad Contributors",
