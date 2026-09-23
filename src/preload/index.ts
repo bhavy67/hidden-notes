@@ -21,12 +21,18 @@ const api = {
   closeWindow: (): void => ipcRenderer.send(IPC.WINDOW_CLOSE),
   minimizeWindow: (): void => ipcRenderer.send(IPC.WINDOW_MINIMIZE),
   panicToggle: (): void => ipcRenderer.send(IPC.PANIC_TOGGLE),
+  panicFlushDone: (): void => ipcRenderer.send(IPC.PANIC_FLUSH_DONE),
 
   // ── subscriptions ─────────────────────────────────────────
   onNotesChanged: (cb: (notes: Note[]) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, notes: Note[]) => cb(notes)
     ipcRenderer.on(IPC.NOTES_CHANGED, handler)
     return () => ipcRenderer.removeListener(IPC.NOTES_CHANGED, handler)
+  },
+  onPanicPre: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on(IPC.PANIC_PRE, handler)
+    return () => ipcRenderer.removeListener(IPC.PANIC_PRE, handler)
   },
   // ── utils ─────────────────────────────────────────────────
   getQueryParams: (): Record<string, string> => {

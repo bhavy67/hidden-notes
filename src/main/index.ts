@@ -13,6 +13,7 @@ let tray: Tray | null = null
 // ── Panic hide state ────────────────────────────────────────
 let panicActive = false
 let panicMainWasVisible = false
+let panicHideTimer: ReturnType<typeof setTimeout> | null = null
 
 const store = new NoteStore(app.getPath('userData'))
 
@@ -49,6 +50,8 @@ function createMainWindow(): BrowserWindow {
   })
 
   setPinned(win, true)
+  // Apply protection at creation so there is zero window of exposure
+  applyContentProtection(win)
 
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -60,6 +63,9 @@ function createMainWindow(): BrowserWindow {
     applyContentProtection(win)
     win.showInactive()
   })
+
+  // Re-apply every time the window becomes visible (OS can reset the flag on restore)
+  win.on('show', () => applyContentProtection(win))
 
   win.on('closed', () => { mainWindow = null })
 
@@ -74,8 +80,19 @@ function panicToggle(): void {
   if (!panicActive) {
     panicActive = true
     panicMainWasVisible = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
-    if (panicMainWasVisible) mainWindow!.hide()
+    if (panicMainWasVisible) {
+      // Ask renderer to flush any pending edits first, then hide when confirmed.
+      // IPC messages are ordered — all pending notes:update calls from the renderer
+      // will be processed before panic:flush-done arrives, guaranteeing no data loss.
+      broadcast(IPC.PANIC_PRE, null)
+      // Safety fallback: hide after 300ms even if the renderer never responds
+      panicHideTimer = setTimeout(() => {
+        panicHideTimer = null
+        mainWindow?.hide()
+      }, 300)
+    }
   } else {
+    if (panicHideTimer) { clearTimeout(panicHideTimer); panicHideTimer = null }
     panicActive = false
     if (panicMainWasVisible) {
       if (!mainWindow || mainWindow.isDestroyed()) {
@@ -88,6 +105,12 @@ function panicToggle(): void {
   }
   updateTrayMenu()
 }
+
+// Renderer confirmed all pending edits are flushed — now safe to hide
+ipcMain.on(IPC.PANIC_FLUSH_DONE, () => {
+  if (panicHideTimer) { clearTimeout(panicHideTimer); panicHideTimer = null }
+  if (panicActive && panicMainWasVisible) mainWindow?.hide()
+})
 
 // ────────────────────────────────────────────────────────────
 // Broadcast notes state to the main window
@@ -103,40 +126,57 @@ function broadcast(channel: string, payload: unknown): void {
 // IPC handlers
 // ────────────────────────────────────────────────────────────
 
-ipcMain.handle(IPC.NOTES_GET_ALL, () => store.all())
+ipcMain.handle(IPC.NOTES_GET_ALL, () => {
+  try { return store.all() }
+  catch (err) { console.error('[GhostPad] notes:getAll failed:', err); return [] }
+})
 
 ipcMain.handle(IPC.NOTES_CREATE, (_e, overrides: Partial<Note>) => {
-  const title = overrides.title !== undefined ? overrides.title : `Tab ${store.nextTabNumber()}`
-  const note = store.create({ ...overrides, title })
-  broadcast(IPC.NOTES_CHANGED, store.all())
-  updateTrayMenu()
-  return note
+  try {
+    const title = overrides.title !== undefined ? overrides.title : `Tab ${store.nextTabNumber()}`
+    const note = store.create({ ...overrides, title })
+    broadcast(IPC.NOTES_CHANGED, store.all())
+    updateTrayMenu()
+    return note
+  } catch (err) {
+    console.error('[GhostPad] notes:create failed:', err)
+    return null
+  }
 })
 
 const snapshotTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 ipcMain.handle(IPC.NOTES_UPDATE, (_e, id: string, patch: NotePatch) => {
-  const note = store.update(id, patch)
-  if (!note) return null
+  try {
+    const note = store.update(id, patch)
+    if (!note) return null
 
-  if (patch.content !== undefined) {
-    const existing = snapshotTimers.get(id)
-    if (existing) clearTimeout(existing)
-    snapshotTimers.set(id, setTimeout(() => {
-      store.saveSnapshot(id)
-      snapshotTimers.delete(id)
-    }, 8000))
+    if (patch.content !== undefined) {
+      const existing = snapshotTimers.get(id)
+      if (existing) clearTimeout(existing)
+      snapshotTimers.set(id, setTimeout(() => {
+        try { store.saveSnapshot(id) } catch (err) { console.error('[GhostPad] saveSnapshot failed:', err) }
+        snapshotTimers.delete(id)
+      }, 8000))
+    }
+
+    broadcast(IPC.NOTES_CHANGED, store.all())
+    updateTrayMenu()
+    return note
+  } catch (err) {
+    console.error('[GhostPad] notes:update failed:', err)
+    return null
   }
-
-  broadcast(IPC.NOTES_CHANGED, store.all())
-  updateTrayMenu()
-  return note
 })
 
 ipcMain.handle(IPC.NOTES_DELETE, (_e, id: string) => {
-  store.remove(id)
-  broadcast(IPC.NOTES_CHANGED, store.all())
-  updateTrayMenu()
+  try {
+    store.remove(id)
+    broadcast(IPC.NOTES_CHANGED, store.all())
+    updateTrayMenu()
+  } catch (err) {
+    console.error('[GhostPad] notes:delete failed:', err)
+  }
 })
 
 ipcMain.on(IPC.WINDOW_CLOSE, () => {
@@ -148,16 +188,24 @@ ipcMain.on(IPC.PANIC_TOGGLE, () => panicToggle())
 
 ipcMain.on(IPC.WINDOW_MINIMIZE, () => mainWindow?.minimize())
 
-ipcMain.handle(IPC.HISTORY_GET, (_e, noteId: string) => store.getHistory(noteId))
+ipcMain.handle(IPC.HISTORY_GET, (_e, noteId: string) => {
+  try { return store.getHistory(noteId) }
+  catch (err) { console.error('[GhostPad] history:get failed:', err); return [] }
+})
 
 ipcMain.handle(IPC.HISTORY_RESTORE, (_e, noteId: string, snapshotId: number) => {
-  const history = store.getHistory(noteId)
-  const snapshot = history.find((h) => h.id === snapshotId)
-  if (!snapshot) return null
-  store.saveSnapshot(noteId)
-  const updated = store.update(noteId, { content: snapshot.content })
-  broadcast(IPC.NOTES_CHANGED, store.all())
-  return updated
+  try {
+    const history = store.getHistory(noteId)
+    const snapshot = history.find((h) => h.id === snapshotId)
+    if (!snapshot) return null
+    store.saveSnapshot(noteId)
+    const updated = store.update(noteId, { content: snapshot.content })
+    broadcast(IPC.NOTES_CHANGED, store.all())
+    return updated
+  } catch (err) {
+    console.error('[GhostPad] history:restore failed:', err)
+    return null
+  }
 })
 
 // ────────────────────────────────────────────────────────────

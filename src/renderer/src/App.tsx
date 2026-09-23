@@ -27,7 +27,7 @@ export default function App() {
     window.ghostpad.getAllNotes().then((all) => {
       setNotes(all)
       if (all.length > 0) setActiveId(all[0].id)
-    })
+    }).catch((err) => console.error('[GhostPad] Failed to load notes:', err))
   }, [])
 
   // Subscribe to main-process changes
@@ -56,6 +56,23 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Flush pending edits immediately (used before panic hide)
+  function flushImmediate() {
+    if (flushTimer.current) { clearTimeout(flushTimer.current); flushTimer.current = null }
+    pendingUpdates.current.forEach((p, nid) => window.ghostpad.updateNote(nid, p))
+    pendingUpdates.current.clear()
+  }
+
+  // When main is about to panic-hide, flush first then confirm.
+  // IPC is ordered: all notes:update calls above arrive at main before flush-done,
+  // so all DB writes complete before the window hides.
+  useEffect(() => {
+    return window.ghostpad.onPanicPre(() => {
+      flushImmediate()
+      window.ghostpad.panicFlushDone()
+    })
   }, [])
 
   // Batched updates: accumulate patches, flush after 220ms idle

@@ -49,6 +49,8 @@ export const IPC = {
   HISTORY_GET: 'history:get',
   HISTORY_RESTORE: 'history:restore',
   PANIC_TOGGLE: 'panic:toggle',
+  PANIC_FLUSH_DONE: 'panic:flush-done', // renderer → main: pending edits flushed, safe to hide
   // main → renderer
   NOTES_CHANGED: 'notes:changed',
+  PANIC_PRE: 'panic:pre',               // main → renderer: flush pending edits before hide
 } as const
