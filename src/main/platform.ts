@@ -1,7 +1,16 @@
 import { BrowserWindow, app } from 'electron'
+import os from 'os'
 
 export const isMac = process.platform === 'darwin'
 export const isWindows = process.platform === 'win32'
+
+// WDA_EXCLUDEFROMCAPTURE (the strong API used by setContentProtection on Windows)
+// requires Windows 10 build 19041 or later.
+export function isWindowsBuildSupported(): boolean {
+  if (!isWindows) return true
+  const parts = os.release().split('.').map(Number)
+  return parts.length >= 3 && parts[2] >= 19041
+}
 
 export function hideDockIcon(): void {
   if (isMac) {
@@ -27,8 +36,8 @@ export function applyContentProtection(win: BrowserWindow): void {
 }
 
 export function captureExclusionCaveat(): string | null {
-  if (isWindows) {
-    return 'Screen-capture exclusion requires Windows 10 (build 19041) or later.'
+  if (isWindows && !isWindowsBuildSupported()) {
+    return `⚠ Windows ${os.release()} — screen capture exclusion needs build 19041+`
   }
   return null
 }
